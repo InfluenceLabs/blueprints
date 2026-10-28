@@ -29,6 +29,16 @@ jobs:
             $SUDO apt-get update && $SUDO apt-get install -y rclone
           fi
 
+      - name: Test OVH connection
+        env:
+          RCLONE_CONFIG_OVH_TYPE: s3
+          RCLONE_CONFIG_OVH_PROVIDER: Other
+          RCLONE_CONFIG_OVH_ENDPOINT: ${{ env.OVH_ENDPOINT }}
+          RCLONE_CONFIG_OVH_REGION: ${{ env.OVH_REGION }}
+          RCLONE_CONFIG_OVH_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+          RCLONE_CONFIG_OVH_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET_KEY }}
+        run: rclone lsf "ovh:${CONTAINER}" --max-depth 1
+
       - name: Copy files to OVH
         env:
           RCLONE_CONFIG_OVH_TYPE: s3

@@ -1,0 +1,46 @@
+# .forgejo/workflows/upload-to-ovh.yml
+name: Upload code to OVH Object Storage
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  upload:
+    runs-on: docker   # replace with a label your runner shows in Settings → Actions → Runners
+    env:
+      REMOTE: ovh
+      OVH_ENDPOINT: https://s3.ca-east-tor.io.cloud.ovh.net
+      OVH_REGION: ca-east-tor
+      CONTAINER: influence-labs
+      PREFIX: repos/${{ github.event.repository.name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install rclone
+        run: |
+          if command -v rclone >/dev/null 2>&1; then
+            echo "rclone already installed"
+          else
+            SUDO=""
+            [ "$(id -u)" -ne 0 ] && SUDO="sudo"
+            $SUDO apt-get update && $SUDO apt-get install -y rclone
+          fi
+
+      - name: Copy files to OVH
+        env:
+          RCLONE_CONFIG_OVH_TYPE: s3
+          RCLONE_CONFIG_OVH_PROVIDER: Other
+          RCLONE_CONFIG_OVH_ENDPOINT: ${{ env.OVH_ENDPOINT }}
+          RCLONE_CONFIG_OVH_REGION: ${{ env.OVH_REGION }}
+          RCLONE_CONFIG_OVH_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+          RCLONE_CONFIG_OVH_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET_KEY }}
+        run: |
+          rclone copy . "${REMOTE}:${CONTAINER}/${PREFIX}" \
+            --exclude ".git/**" \
+            --exclude ".github/**" \
+            --exclude ".forgejo/**" \
+            --exclude "node_modules/**" \
+            --progress

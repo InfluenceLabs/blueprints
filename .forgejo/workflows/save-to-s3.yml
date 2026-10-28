@@ -11,9 +11,9 @@ jobs:
     runs-on: docker   # replace with a label your runner shows in Settings → Actions → Runners!!
     env:
       REMOTE: ovh
-      OVH_ENDPOINT: https://s3.ca-east-tor.io.cloud.ovh.net
+      OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
       OVH_REGION: ca-east-tor
-      CONTAINER: influence-labs
+      CONTAINER: ${{ secrets.CONTAINER }}
       PREFIX: repos/${{ github.event.repository.name }}
     steps:
       - name: Checkout repository

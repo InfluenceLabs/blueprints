@@ -8,7 +8,7 @@ on:
 
 jobs:
   upload:
-    runs-on: docker   # replace with a label your runner shows in Settings → Actions → Runners!
+    runs-on: docker   # replace with a label your runner shows in Settings → Actions → Runners!!
     env:
       REMOTE: ovh
       OVH_ENDPOINT: https://s3.ca-east-tor.io.cloud.ovh.net

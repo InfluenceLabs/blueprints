@@ -1,0 +1,438 @@
+{
+  "name": "Save Blueprints to Git",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Clone workflow payload safely\nlet workflowStr = JSON.stringify($json);\n\n// 1. Sanitize Secrets, Internal Webhook URLs, and Dynamic UUIDs\nconst idReplacements = [\n  [/https:\\/\\/automation\\.yourdomain\\.com/g, \"https://{{N8N_HOST}}\"],\n  [/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/g, \"{{UUID_PLACEHOLDER}}\"]\n];\n\nidReplacements.forEach(([pattern, placeholder]) => {\n  workflowStr = workflowStr.replace(pattern, placeholder);\n});\n\nconst workflow = JSON.parse(workflowStr);\n\n// Clean Credentials, Webhook IDs, and Node Metadata\nif (workflow.nodes && Array.isArray(workflow.nodes)) {\n  workflow.nodes.forEach(node => {\n    if (node.credentials) {\n      Object.keys(node.credentials).forEach(credType => {\n        node.credentials[credType] = { id: \"\", name: \"\" };\n      });\n    }\n    if (node.type === 'n8n-nodes-base.webhook' && node.webhookId) {\n      node.webhookId = \"\";\n    }\n  });\n}\n\ndelete workflow.id;\ndelete workflow.pinData;\ndelete workflow.active;\ndelete workflow.versionId;\n\n// 2. Safely Parse Tags Array\nconst tags = Array.isArray(workflow.tags) ? workflow.tags.map(t => (typeof t === 'string' ? t : t.name || '')) : [];\n\n// Extract Package Tag Value (e.g. 'pkg:RFF' -> 'rff')\nconst pkgTag = tags.find(t => t.toLowerCase().startsWith('pkg:'));\nconst pkg = pkgTag ? pkgTag.replace(/^pkg:/i, '').trim().toLowerCase() : 'uncategorized-product';\n\n// Extract Category Tag Value (e.g. 'category:signals' -> 'signals')\nconst categoryTag = tags.find(t => t.toLowerCase().startsWith('category:'));\nconst category = categoryTag ? categoryTag.replace(/^category:/i, '').trim().toLowerCase() : 'general';\n\n// Standardize workflow filename from workflow name\nconst workflowName = workflow.name || 'untitled-workflow';\nconst safeFileName = workflowName\n  .toLowerCase()\n  .replace(/[^a-z0-9]/g, '-')\n  .replace(/-+/g, '-')\n  .replace(/^-|-$/g, '');\n\n// Construct Repository Target Path: {pkg}/blueprints/{category}/{filename}.json\nconst targetFilePath = `blueprints/${category}/${safeFileName}.json`;\n\n// Format final JSON string and Base64 encode for Forgejo API\nconst cleanJson = JSON.stringify(workflow, null, 2);\nconst base64Content = Buffer.from(cleanJson).toString('base64');\n\nreturn [{\n  json: {\n    workflowName: workflowName,\n    filePath: targetFilePath,\n    base64Content: base64Content,\n    commitMessage: `chore(blueprint): sync ${workflowName} [${pkg}/${category}]`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        464
+      ],
+      "id": "302c278e-a7a4-4a1d-af61-6d92772666a9",
+      "name": "Get details"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 12
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -176,
+        688
+      ],
+      "id": "00e842a2-5e6e-4560-871c-3dc9db768bbe",
+      "name": "Every 12 hours"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        496,
+        688
+      ],
+      "id": "f6120219-19a7-4e87-a6de-2f6d2703136e",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        720,
+        272
+      ],
+      "id": "4e82cc17-0108-41bf-839a-b69e6643e97f",
+      "name": "No Operation, do nothing1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "d36635de-db9a-4501-a909-30a58c3cb84f",
+              "leftValue": "={{ $json.content }}",
+              "rightValue": "={{ $('Get details').item.json.base64Content }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1392,
+        464
+      ],
+      "id": "255ec36e-9d59-445d-aa5e-fc1e5be16f54",
+      "name": "If Updates"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1616,
+        736
+      ],
+      "id": "b8223fe3-8381-45ac-8e56-8218d18896a5",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "filePath": "={{ $json.filePath }}",
+        "fileContent": "={{ $json.base64Content }}",
+        "commitMessage": "={{ $('Get details').item.json.commitMessage }}"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        464
+      ],
+      "id": "ffe1969a-32f6-41ef-971c-b656ca54f546",
+      "name": "Create a file",
+      "webhookId": "7dac3307-854f-4677-94ca-3f9994520bbf",
+      "retryOnFail": true,
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "lJfFa8BTBYbEuESG",
+          "name": "GitHub account 3"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "get",
+        "owner": {
+          "__rl": true,
+          "value": "InfluenceLabs",
+          "mode": "list",
+          "cachedResultName": "InfluenceLabs",
+          "cachedResultUrl": "https://github.com/InfluenceLabs"
+        },
+        "repository": {
+          "__rl": true,
+          "value": "test-pipeline",
+          "mode": "list",
+          "cachedResultName": "test-pipeline",
+          "cachedResultUrl": "https://github.com/InfluenceLabs/test-pipeline"
+        },
+        "filePath": "={{ $('Get details').item.json.filePath }}",
+        "asBinaryProperty": false,
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        1168,
+        464
+      ],
+      "id": "fdb0661e-ced5-404c-bcff-79b71844cfa3",
+      "name": "Get a file",
+      "webhookId": "7dac3307-854f-4677-94ca-3f9994520bbf",
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "lJfFa8BTBYbEuESG",
+          "name": "GitHub account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "filters": {
+          "activeWorkflows": true,
+          "tags": "",
+          "excludePinnedData": true
+        },
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.n8n",
+      "typeVersion": 1,
+      "position": [
+        48,
+        688
+      ],
+      "id": "64e3c025-2bf3-4272-875f-683de6892853",
+      "name": "Get Workflows",
+      "credentials": {
+        "n8nApi": {
+          "id": "H0Ezx0bKfyJrXVgy",
+          "name": "n8n account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        272,
+        688
+      ],
+      "id": "15a47930-b30b-475e-b112-c8fc16323c50",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "edit",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "filePath": "={{ $('Get details').item.json.filePath }}",
+        "fileContent": "={{ $('Get details').item.json.base64Content }}",
+        "commitMessage": "={{ $('Get details').item.json.commitMessage }}"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        1616,
+        544
+      ],
+      "id": "2b41bf0e-6802-4622-b741-83d783a8b90c",
+      "name": "Update file",
+      "webhookId": "7dac3307-854f-4677-94ca-3f9994520bbf",
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "lJfFa8BTBYbEuESG",
+          "name": "GitHub account 3"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Every 12 hours": [
+      {
+        "json": {
+          "timestamp": "2026-10-30T00:00:42.016-04:00",
+          "Readable date": "October 30th 2026, 12:00:42 am",
+          "Readable time": "12:00:42 am",
+          "Day of week": "Friday",
+          "Year": "2026",
+          "Month": "October",
+          "Day of month": "30",
+          "Hour": "00",
+          "Minute": "00",
+          "Second": "42",
+          "Timezone": "America/Toronto (UTC-04:00)"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Get details": {
+      "main": [
+        [
+          {
+            "node": "Create a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 12 hours": {
+      "main": [
+        [
+          {
+            "node": "Get Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Updates": {
+      "main": [
+        [
+          {
+            "node": "Update file",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Operation, do nothing": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a file": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a file": {
+      "main": [
+        [
+          {
+            "node": "If Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Workflows": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update file": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d90c945d-eed3-4ffd-b045-90b772e38696",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8a6bd189422953cf231fab1fe37c05f6ef5e267b571e2fcd2ca28f5815e55a63"
+  },
+  "nodeGroups": [],
+  "id": "YWi3nfke0uQyOy0l",
+  "tags": [
+    {
+      "updatedAt": "2026-09-30T00:16:34.692Z",
+      "createdAt": "2026-09-30T00:16:34.692Z",
+      "id": "DTACwh3a9naMfDqD",
+      "name": "Git"
+    },
+    {
+      "updatedAt": "2025-12-22T21:23:24.395Z",
+      "createdAt": "2025-12-22T21:23:24.395Z",
+      "id": "oSs60UGBVTNe8hJk",
+      "name": "Freebie"
+    },
+    {
+      "updatedAt": "2026-09-30T00:16:25.953Z",
+      "createdAt": "2026-09-30T00:16:25.953Z",
+      "id": "r7OWNHmofd8JKjZA",
+      "name": "Maintenance"
+    }
+  ]
+}
